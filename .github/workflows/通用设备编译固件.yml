@@ -14,6 +14,8 @@ on:
           - lede-master
           - immortalwrt-master
           - Lienol-master
+  schedule:
+    - cron: '0 4 * * *'  # 每天 04:00 运行
 
 env:
   FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
