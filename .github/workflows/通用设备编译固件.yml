@@ -7,7 +7,7 @@ on:
       source_branch:
         description: "Select the source branch"
         required: false
-        default: "lede-master"  # 手动触发时的默认分支
+        default: "lede-master"
         type: choice
         options:
           - openwrt-main
@@ -16,14 +16,22 @@ on:
           - Lienol-master
   schedule:
     - cron: '0 4 * * *'  # 每天 04:00 运行
-    # 对于每天运行并想指定为 lede-master，可以在首次运行时无需手动输入，而选择 `source_branch` 为 `lede-master`
+
+env:
+  FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
+  CONFIG_FILE: config/${{ inputs.source_branch }}/config
+  DIY_P1_SH: config/${{ inputs.source_branch }}/diy-part1.sh
+  DIY_P2_SH: config/${{ inputs.source_branch }}/diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     if: ${{ github.event.repository.owner.id }} == ${{ github.event.sender.id }}
-    
-    # 当事件是 scheduled 的时候，source_branch 默认设置为 'lede-master'
+
     env:
       SOURCE_BRANCH: ${{ github.event_name == 'schedule' && 'lede-master' || inputs.source_branch }}
 
@@ -177,6 +185,31 @@ jobs:
             echo "- 默认密码: password"
           } > release.txt
 
+      - name: Manage Releases
+        id: manage_releases
+        run: |
+          # 获取所有的 Releases
+          releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[].id')
+
+          # 计算需要删除的 Releases 数量
+          total=$(echo "$releases" | wc -l)
+          
+          if [ "$total" -gt 2 ]; then
+            # 计算要删除的 Releases 并删除旧的 Releases
+            to_delete=$(($total - 2))
+            echo "将删除 $to_delete 个旧的 Releases"
+
+            # 删除旧 Releases
+            echo "$releases" | head -n $to_delete | while read release_id; do
+              echo "删除 release ID: $release_id"
+              curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
+            done
+          else
+            echo "当前没有多余的 Releases, 保留所有 Releases."
+          fi
+
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v1
         if: env.tag_status == 'success' && !cancelled()
@@ -187,21 +220,3 @@ jobs:
           body_path: release.txt
           files: ${{ env.FIRMWARE }}/*
 
-      - name: Delete workflow runs
-        uses: GitRML/delete-workflow-runs@main
-        with:
-          retain_days: 1
-          keep_minimum_runs: 3
-          token: ${{ secrets.GH_TOKEN }}
-          body: |
-
-            ### OpenWrt Image information
-            - Default IP: 192.168.10.1
-            - Default username: root
-            - Default password: password
-            - Default WIFI name: OJBK
-            - Default WIFI password: none
-            ### Install to EMMC
-            - Login to OpenWrt → System → Amlogic Service → Install OpenWrt
-            ### OpenWrt Image Verification
-            - sha256sum
