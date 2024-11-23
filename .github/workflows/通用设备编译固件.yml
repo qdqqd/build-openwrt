@@ -7,7 +7,7 @@ on:
       source_branch:
         description: "Select the source branch"
         required: false
-        default: "lede-master"
+        default: "lede-master"  # 手动触发时的默认分支
         type: choice
         options:
           - openwrt-main
@@ -16,21 +16,16 @@ on:
           - Lienol-master
   schedule:
     - cron: '0 4 * * *'  # 每天 04:00 运行
-
-env:
-  FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
-  CONFIG_FILE: config/${{ inputs.source_branch }}/config
-  DIY_P1_SH: config/${{ inputs.source_branch }}/diy-part1.sh
-  DIY_P2_SH: config/${{ inputs.source_branch }}/diy-part2.sh
-  UPLOAD_BIN_DIR: true
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
+    # 对于每天运行并想指定为 lede-master，可以在首次运行时无需手动输入，而选择 `source_branch` 为 `lede-master`
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     if: ${{ github.event.repository.owner.id }} == ${{ github.event.sender.id }}
+    
+    # 当事件是 scheduled 的时候，source_branch 默认设置为 'lede-master'
+    env:
+      SOURCE_BRANCH: ${{ github.event_name == 'schedule' && 'lede-master' || inputs.source_branch }}
 
     steps:
       - name: Checkout
@@ -55,13 +50,13 @@ jobs:
           sudo timedatectl set-timezone "${TZ}"
           echo "status=success" >> $GITHUB_ENV
 
-      - name: Clone source code [ ${{ inputs.source_branch }} ]
+      - name: Clone source code [ ${{ env.SOURCE_BRANCH }} ]
         id: codes
         working-directory: /workdir
         if: env.status == 'success' && !cancelled()
         run: |
           # Set up compilation source code
-          case "${{ inputs.source_branch }}" in
+          case "${{ env.SOURCE_BRANCH }}" in
             openwrt-main)
               REPO_URL="https://github.com/openwrt/openwrt"
               REPO_BRANCH="main"
