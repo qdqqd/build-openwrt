@@ -187,36 +187,43 @@ jobs:
           echo "status=success" >> ${GITHUB_OUTPUT}
 
 
-      - name: Manage Releases
-        id: manage_releases
-        run: |
-          # 获取所有的 Releases
-          releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | "\(.id) \(.created_at)"')
+            - name: Manage Releases
+              id: manage_releases
+              run: |
+                # 获取所有 Releases 列表
+                releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | "\(.id) \(.created_at)"')
 
-          # 获取当前日期
+          # 如果 Releases 为空，直接退出
+          if [ -z "$releases" ]; then
+            echo "No releases to manage."
+            exit 0
+          fi
+
+          # 获取当前日期的 UNIX 时间戳
           current_date=$(date +%s)
 
-          # 遍历所有 Releases 并删除一周前的 Releases
+          # 遍历 Releases 并检查日期差
           echo "$releases" | while read release_info; do
             release_id=$(echo $release_info | cut -d' ' -f1)
             release_date=$(echo $release_info | cut -d' ' -f2)
 
-            # 转换 release 创建日期为秒
-            release_date_seconds=$(date -d $release_date +%s)
+            # 提取 Release 创建时间的 UNIX 时间戳
+            release_date_seconds=$(date -d "$release_date" +%s || exit 1)
 
-            # 计算日期差
+            # 计算日期差（以天为单位）
             let date_diff=($current_date-$release_date_seconds)/86400
 
-            # 如果 Release 超过7天，则删除
+            # 删除超过 7 天的 Release
             if [ $date_diff -gt 7 ]; then
-              echo "删除 release ID: $release_id, 日期差: $date_diff 天"
+              echo "Deleting release ID: $release_id, $date_diff days old."
               curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
+                "https://api.github.com/repos/${{ github.repository }}/releases/$release_id" || echo "Failed to delete release ID: $release_id"
             else
-              echo "保留 release ID: $release_id, 创建时间在一周内."
+              echo "Keeping release ID: $release_id, created within the last week."
             fi
           done
+
 
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v1
