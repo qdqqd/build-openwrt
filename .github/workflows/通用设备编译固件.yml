@@ -158,7 +158,8 @@ jobs:
           cd openwrt/bin/targets/*/*
           rm -rf packages
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_ENV
+          echo "::set-output name=status::success"
+
 
       - name: Upload firmware directory
         uses: actions/upload-artifact@main
@@ -167,24 +168,24 @@ jobs:
           name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: ${{ env.FIRMWARE }}
 
-      - name: Generate release tag and description
+      - name: Generate release tag
         id: tag
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
         run: |
-          PREFIX="lede_jdcloud_re-ss-01"
-          DATE_TIME=$(date +"%Y.%m.%d-%H:%M")
-          RELEASE_TAG="${PREFIX}_${DATE_TIME}"
-          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_ENV
-          
-          # Release Description
-          {
-            echo "### 固件信息"
-            echo "- 固件类型: LEDE"
-            echo "- 分支: master"
-            echo "- 支持的设备: jdcloud_re-ss-01"
-            echo "- 默认登录IP: 192.168.10.1"
-            echo "- 默认用户名: root"
-            echo "- 默认密码: password"
-          } > release.txt
+          release_tag=$(date +"%Y.%m.%d-%H%M")
+          echo "release_tag=${release_tag}" >> $GITHUB_ENV
+          echo "::set-output name=release_tag::${release_tag}"
+
+          # 创建 release 信息
+          echo "### 固件信息" > release.txt
+          echo "- 固件类型: LEDE" >> release.txt
+          echo "- 分支: master" >> release.txt
+          echo "- 支持的设备: jdcloud_re-ss-01" >> release.txt
+          echo "- 默认登录IP: 192.168.10.1" >> release.txt
+          echo "- 默认用户名: root" >> release.txt
+          echo "- 默认密码: password" >> release.txt
+          echo "status=success" >> ${GITHUB_OUTPUT}
+
 
       - name: Manage Releases
         id: manage_releases
@@ -219,11 +220,12 @@ jobs:
 
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v1
-        if: env.tag_status == 'success' && !cancelled()
+        if: steps.tag.outputs.status == 'success' && !cancelled()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.release_tag }}
+          tag_name: ${{ steps.tag.outputs.release_tag }}
           body_path: release.txt
           files: ${{ env.FIRMWARE }}/*
+
 
