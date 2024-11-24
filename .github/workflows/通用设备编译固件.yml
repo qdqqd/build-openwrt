@@ -190,25 +190,31 @@ jobs:
         run: |
           # 获取所有的 Releases
           releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[].id')
+            "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | "\(.id) \(.created_at)"')
 
-          # 计算需要删除的 Releases 数量
-          total=$(echo "$releases" | wc -l)
-          
-          if [ "$total" -gt 2 ]; then
-            # 计算要删除的 Releases 并删除旧的 Releases
-            to_delete=$(($total - 2))
-            echo "将删除 $to_delete 个旧的 Releases"
+          # 获取当前日期
+          current_date=$(date +%s)
 
-            # 删除旧 Releases
-            echo "$releases" | head -n $to_delete | while read release_id; do
-              echo "删除 release ID: $release_id"
+          # 遍历所有 Releases 并删除一周前的 Releases
+          echo "$releases" | while read release_info; do
+            release_id=$(echo $release_info | cut -d' ' -f1)
+            release_date=$(echo $release_info | cut -d' ' -f2)
+
+            # 转换 release 创建日期为秒
+            release_date_seconds=$(date -d $release_date +%s)
+
+            # 计算日期差
+            let date_diff=($current_date-$release_date_seconds)/86400
+
+            # 如果 Release 超过7天，则删除
+            if [ $date_diff -gt 7 ]; then
+              echo "删除 release ID: $release_id, 日期差: $date_diff 天"
               curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
                 "https://api.github.com/repos/${{ github.repository }}/releases/$release_id"
-            done
-          else
-            echo "当前没有多余的 Releases, 保留所有 Releases."
-          fi
+            else
+              echo "保留 release ID: $release_id, 创建时间在一周内."
+            fi
+          done
 
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v1
