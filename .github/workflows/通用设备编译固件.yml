@@ -1,8 +1,3 @@
-#============================================================================================
-# https://github.com/ophub/amlogic-s9xxx-openwrt
-# Description: Build OpenWrt
-#============================================================================================
-
 name: 通用设备编译固件
 
 on:
@@ -19,7 +14,9 @@ on:
           - lede-master
           - immortalwrt-master
           - Lienol-master
-      
+  schedule:
+    - cron: '0 4 * * *'  # This cron expression schedules the workflow to run daily at 4 AM UTC
+
 env:
   FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
   CONFIG_FILE: config/${{ inputs.source_branch }}/config
@@ -176,6 +173,18 @@ jobs:
           [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
           [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
           echo "::set-output name=status::success"
+
+
+      - name: Upload firmware to release
+        uses: softprops/action-gh-release@v1
+        if: steps.tag.outputs.status == 'success' && !cancelled()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          body_path: release.txt
+          files: ${{ env.FIRMWARE }}/*
+
 
       - name: Delete workflow runs
         uses: GitRML/delete-workflow-runs@main
