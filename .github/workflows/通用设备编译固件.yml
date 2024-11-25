@@ -1,7 +1,6 @@
 name: 通用设备编译固件
 
 on:
-  repository_dispatch:
   workflow_dispatch:
     inputs:
       source_branch:
@@ -40,7 +39,6 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Initialization environment
-        id: init
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -49,23 +47,19 @@ jobs:
           sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android 2>/dev/null
           sudo -E apt-get -y update
           sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          #sudo -E apt-get -y install $(curl -fsSL https://is.gd/depend_ubuntu2204_openwrt)
-          sudo -E apt-get -y install ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison btrfs-progs build-essential bzip2 ca-certificates ccache cmake coreutils cpio curl device-tree-compiler fastjar flex g++-multilib gawk gcc-multilib gettext git git-core gperf gzip haveged help2man intltool jq libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool libz-dev lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pigz pkgconf python2.7 python3 python3-pip python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools swig tar texinfo uglifyjs unzip upx upx-ucl vim wget xmlto xsltproc xxd xz-utils yasm zip zlib1g-dev zstd
+          sudo -E apt-get -y install $(curl -fsSL https://example.com/dependency-list) # Adjust URL
           sudo -E systemctl daemon-reload
           sudo -E apt-get -y autoremove --purge
           sudo -E apt-get clean
           sudo mkdir -p /workdir
-          sudo chown ${USER}:${GROUPS} /workdir
-          sudo timedatectl set-timezone "${TZ}"
+          sudo chown $USER:$GROUPS /workdir
+          sudo timedatectl set-timezone "$TZ"
           echo "status=success" >> $GITHUB_ENV
 
-      - name: Clone source code [ ${{ env.SOURCE_BRANCH }} ]
-        id: codes
-        working-directory: /workdir
-        if: env.status == 'success' && !cancelled()
+      - name: Clone source code
+        if: env.status == 'success'
         run: |
-          # Set up compilation source code
-          case "${{ env.SOURCE_BRANCH }}" in
+          case "$SOURCE_BRANCH" in
             openwrt-main)
               REPO_URL="https://github.com/openwrt/openwrt"
               REPO_BRANCH="main"
@@ -92,56 +86,45 @@ jobs:
               ;;
           esac
 
-          # Clone source code
-          git clone -q --single-branch --depth=1 --branch=${REPO_BRANCH} ${REPO_URL} openwrt
-          ln -sf /workdir/openwrt ${GITHUB_WORKSPACE}/openwrt
+          git clone -q --single-branch --depth=1 --branch=$REPO_BRANCH $REPO_URL openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-          # Set output information
           echo "build_tag=OpenWrt_${TAGS_NAME}_${{ inputs.openwrt_storage }}_$(date +"%Y.%m")" >> $GITHUB_ENV
-          echo -e "REPO_URL: [ ${REPO_URL} ]\nREPO_BRANCH: [ ${REPO_BRANCH} ]\nTAGS_NAME: [ ${TAGS_NAME} ]"
-          df -hT ${PWD}
-          echo "status=success" >> $GITHUB_ENV
 
       - name: Load custom feeds
         run: |
-          [[ -f "${FEEDS_CONF}" ]] && cp -f ${FEEDS_CONF} openwrt/feeds.conf.default
-          chmod +x ${DIY_P1_SH}
-          cd openwrt/
-          ${GITHUB_WORKSPACE}/${DIY_P1_SH}
+          [[ -f "$FEEDS_CONF" ]] && cp -f "$FEEDS_CONF" openwrt/feeds.conf.default
+          chmod +x "$DIY_P1_SH"
+          ( cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH )
 
       - name: Update feeds
-        run: cd openwrt/ && ./scripts/feeds update -a
+        run: cd openwrt && ./scripts/feeds update -a
 
       - name: Install feeds
-        run: cd openwrt/ && ./scripts/feeds install -a
+        run: cd openwrt && ./scripts/feeds install -a
 
       - name: Load custom configuration
         run: |
           [[ -d "files" ]] && mv -f files openwrt/files
-          [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
-          chmod +x ${DIY_P2_SH}
-          cd openwrt/
-          ${GITHUB_WORKSPACE}/${DIY_P2_SH}
+          [[ -e "$CONFIG_FILE" ]] && cp -f "$CONFIG_FILE" openwrt/.config
+          chmod +x "$DIY_P2_SH"
+          ( cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH )
 
       - name: Download package
-        id: package
         run: |
-          cd openwrt/
-          make defconfig
+          cd openwrt && make defconfig
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
       - name: Compile the OpenWrt
-        id: compile
         run: |
-          cd openwrt/
+          cd openwrt
           echo -e "$(nproc) thread compile"
           make -j$(($(nproc) + 1)) V=s || make -j1 V=s
           echo "status=success" >> $GITHUB_ENV
 
       - name: Check space usage
-        if: (!cancelled())
         run: df -hT
 
       - name: Upload bin directory
@@ -152,31 +135,24 @@ jobs:
           path: openwrt/bin
 
       - name: Organize files
-        id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        if: env.UPLOAD_FIRMWARE == 'true'
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "::set-output name=status::success"
-
+          echo "organize_status=success" >> $GITHUB_STATE
 
       - name: Upload firmware directory
         uses: actions/upload-artifact@main
-        if: env.organize_status == 'success' && !cancelled()
+        if: state.organize_status == 'success'
         with:
           name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: ${{ env.FIRMWARE }}
 
       - name: Generate release tag
-        id: tag
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+        if: env.UPLOAD_RELEASE == 'true'
         run: |
-          release_tag=$(date +"%Y.%m.%d-%H%M")
-          echo "release_tag=${release_tag}" >> $GITHUB_ENV
-          echo "::set-output name=release_tag::${release_tag}"
-
-          # 创建 release 信息
+          echo "release_tag=LEDE_NSS_AX1800PRO_$(date +%Y.%m.%d-%H%M)" >> $GITHUB_OUTPUT
           echo "### 固件信息" > release.txt
           echo "- 固件类型: LEDE" >> release.txt
           echo "- 分支: master" >> release.txt
@@ -184,37 +160,26 @@ jobs:
           echo "- 默认登录IP: 192.168.10.1" >> release.txt
           echo "- 默认用户名: root" >> release.txt
           echo "- 默认密码: password" >> release.txt
-          echo "status=success" >> ${GITHUB_OUTPUT}
 
+      - name: Manage Releases
+        run: |
+          releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | "\(.id) \(.created_at)"')
 
-            - name: Manage Releases
-              id: manage_releases
-              run: |
-                # 获取所有 Releases 列表
-                releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                  "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | "\(.id) \(.created_at)"')
-
-          # 如果 Releases 为空，直接退出
           if [ -z "$releases" ]; then
             echo "No releases to manage."
             exit 0
           fi
 
-          # 获取当前日期的 UNIX 时间戳
           current_date=$(date +%s)
 
-          # 遍历 Releases 并检查日期差
           echo "$releases" | while read release_info; do
-            release_id=$(echo $release_info | cut -d' ' -f1)
-            release_date=$(echo $release_info | cut -d' ' -f2)
+            release_id=$(echo "$release_info" | cut -d' ' -f1)
+            release_date=$(echo "$release_info" | cut -d' ' -f2)
 
-            # 提取 Release 创建时间的 UNIX 时间戳
             release_date_seconds=$(date -d "$release_date" +%s || exit 1)
-
-            # 计算日期差（以天为单位）
             let date_diff=($current_date-$release_date_seconds)/86400
 
-            # 删除超过 7 天的 Release
             if [ $date_diff -gt 7 ]; then
               echo "Deleting release ID: $release_id, $date_diff days old."
               curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
@@ -224,15 +189,12 @@ jobs:
             fi
           done
 
-
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v1
-        if: steps.tag.outputs.status == 'success' && !cancelled()
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           body_path: release.txt
           files: ${{ env.FIRMWARE }}/*
-
-
