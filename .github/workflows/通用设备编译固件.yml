@@ -1,6 +1,12 @@
+#============================================================================================
+# https://github.com/ophub/amlogic-s9xxx-openwrt
+# Description: Build OpenWrt
+#============================================================================================
+
 name: 通用设备编译固件
 
 on:
+  repository_dispatch:
   workflow_dispatch:
     inputs:
       source_branch:
@@ -13,14 +19,12 @@ on:
           - lede-master
           - immortalwrt-master
           - Lienol-master
-  schedule:
-    - cron: '0 4 * * *'  # 每天 04:00 运行
-
+      
 env:
-  FEEDS_CONF: config/${{ inputs.source_branch || 'lede-master' }}/feeds.conf.default
-  CONFIG_FILE: config/${{ inputs.source_branch || 'lede-master' }}/config
-  DIY_P1_SH: config/${{ inputs.source_branch || 'lede-master' }}/diy-part1.sh
-  DIY_P2_SH: config/${{ inputs.source_branch || 'lede-master' }}/diy-part2.sh
+  FEEDS_CONF: config/${{ inputs.source_branch }}/feeds.conf.default
+  CONFIG_FILE: config/${{ inputs.source_branch }}/config
+  DIY_P1_SH: config/${{ inputs.source_branch }}/diy-part1.sh
+  DIY_P2_SH: config/${{ inputs.source_branch }}/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -31,171 +35,151 @@ jobs:
     runs-on: ubuntu-22.04
     if: ${{ github.event.repository.owner.id }} == ${{ github.event.sender.id }}
 
-    env:
-      SOURCE_BRANCH: ${{ github.event_name == 'schedule' && 'lede-master' || inputs.source_branch }}
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@main
 
       - name: Initialization environment
+        id: init
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          docker rmi $(docker images -q)
+          docker rmi `docker images -q`
           [[ -n "${AGENT_TOOLSDIRECTORY}" ]] && sudo rm -rf "${AGENT_TOOLSDIRECTORY}"
           sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android 2>/dev/null
           sudo -E apt-get -y update
           sudo -E apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
-          sudo -E apt-get -y install $(curl -fsSL https://example.com/dependency-list) # Adjust URL
+          #sudo -E apt-get -y install $(curl -fsSL https://is.gd/depend_ubuntu2204_openwrt)
+          sudo -E apt-get -y install ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison btrfs-progs build-essential bzip2 ca-certificates ccache cmake coreutils cpio curl device-tree-compiler fastjar flex g++-multilib gawk gcc-multilib gettext git git-core gperf gzip haveged help2man intltool jq libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool libz-dev lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pigz pkgconf python2.7 python3 python3-pip python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools swig tar texinfo uglifyjs unzip upx upx-ucl vim wget xmlto xsltproc xxd xz-utils yasm zip zlib1g-dev zstd
           sudo -E systemctl daemon-reload
+          #sudo -E apt-get -y full-upgrade
           sudo -E apt-get -y autoremove --purge
           sudo -E apt-get clean
           sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
-          sudo timedatectl set-timezone "$TZ"
-          echo "status=success" >> $GITHUB_ENV
-
-      - name: Clone source code
-        if: env.status == 'success'
+          sudo chown ${USER}:${GROUPS} /workdir
+          sudo timedatectl set-timezone "${TZ}"
+          echo "status=success" >> ${GITHUB_OUTPUT}
+      - name: Clone source code [ ${{ inputs.source_branch }} ]
+        id: codes
+        working-directory: /workdir
+        if: ${{ steps.init.outputs.status }} == 'success' && !cancelled()
         run: |
-          case "$SOURCE_BRANCH" in
-            openwrt-main)
+          # Set up compilation source code
+          if [[ "${{ inputs.source_branch }}" == *"openwrt"* ]]; then
               REPO_URL="https://github.com/openwrt/openwrt"
               REPO_BRANCH="main"
               TAGS_NAME="official"
-              ;;
-            lede-master)
+          elif [[ "${{ inputs.source_branch }}" == *"lede"* ]]; then
               REPO_URL="https://github.com/coolsnowwolf/lede"
               REPO_BRANCH="master"
               TAGS_NAME="lede"
-              ;;
-            immortalwrt-master)
+          elif [[ "${{ inputs.source_branch }}" == *"immortalwrt"* ]]; then
               REPO_URL="https://github.com/immortalwrt/immortalwrt"
               REPO_BRANCH="master"
               TAGS_NAME="immortalwrt"
-              ;;
-            Lienol-master)
+          elif [[ "${{ inputs.source_branch }}" == *"Lienol"* ]]; then
               REPO_URL="https://github.com/Lienol/openwrt"
               REPO_BRANCH="22.03"
               TAGS_NAME="Lienol"
-              ;;
-            *)
+          else
               echo "Unknown source code repository."
               exit 1
-              ;;
-          esac
-
-          git clone -q --single-branch --depth=1 --branch=$REPO_BRANCH $REPO_URL openwrt
-          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-          echo "build_tag=OpenWrt_${TAGS_NAME}_${{ inputs.openwrt_storage }}_$(date +"%Y.%m")" >> $GITHUB_ENV
-
+          fi
+          # Clone source code
+          git clone -q --single-branch --depth=1 --branch=${REPO_BRANCH} ${REPO_URL} openwrt
+          ln -sf /workdir/openwrt ${GITHUB_WORKSPACE}/openwrt
+          # Set output information
+          echo "build_tag=OpenWrt_${TAGS_NAME}_${{ inputs.openwrt_storage }}_$(date +"%Y.%m")" >> ${GITHUB_OUTPUT}
+          echo -e "REPO_URL: [ ${REPO_URL} ]\nREPO_BRANCH: [ ${REPO_BRANCH} ]\nTAGS_NAME: [ ${TAGS_NAME} ]"
+          df -hT ${PWD}
+          echo "status=success" >> ${GITHUB_OUTPUT}
       - name: Load custom feeds
         run: |
-          [[ -f "$FEEDS_CONF" ]] && cp -f "$FEEDS_CONF" openwrt/feeds.conf.default
-          chmod +x "$DIY_P1_SH"
-          ( cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH )
-
+          [[ -f "${FEEDS_CONF}" ]] && cp -f ${FEEDS_CONF} openwrt/feeds.conf.default
+          chmod +x ${DIY_P1_SH}
+          cd openwrt/
+          ${GITHUB_WORKSPACE}/${DIY_P1_SH}
       - name: Update feeds
-        run: cd openwrt && ./scripts/feeds update -a
+        run: cd openwrt/ && ./scripts/feeds update -a
 
       - name: Install feeds
-        run: cd openwrt && ./scripts/feeds install -a
+        run: cd openwrt/ && ./scripts/feeds install -a
 
       - name: Load custom configuration
         run: |
           [[ -d "files" ]] && mv -f files openwrt/files
-          [[ -e "$CONFIG_FILE" ]] && cp -f "$CONFIG_FILE" openwrt/.config
-          chmod +x "$DIY_P2_SH"
-          ( cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH )
-
+          [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
+          chmod +x ${DIY_P2_SH}
+          cd openwrt/
+          ${GITHUB_WORKSPACE}/${DIY_P2_SH}
       - name: Download package
+        id: package
         run: |
-          cd openwrt && make defconfig
+          cd openwrt/
+          make defconfig
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
-
       - name: Compile the OpenWrt
+        id: compile
         run: |
-          cd openwrt
+          cd openwrt/
           echo -e "$(nproc) thread compile"
-          make -j$(($(nproc) + 1)) V=s || make -j1 V=s
-          echo "status=success" >> $GITHUB_ENV
-
+          make -j$(($(nproc) + 1)) V=s || make -j1 || make -j1 V=s
+          echo "status=success" >> ${GITHUB_OUTPUT}
       - name: Check space usage
+        if: (!cancelled())
         run: df -hT
 
       - name: Upload bin directory
         uses: actions/upload-artifact@main
-        if: env.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
         with:
           name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: openwrt/bin
 
       - name: Organize files
-        if: env.UPLOAD_FIRMWARE == 'true'
+        id: organize
+        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "organize_status=success" >> $GITHUB_STATE
-
+          echo "::set-output name=status::success"
       - name: Upload firmware directory
         uses: actions/upload-artifact@main
-        if: ${{ env.organize_status == 'success' }}
+        if: steps.organize.outputs.status == 'success' && !cancelled()
         with:
           name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: ${{ env.FIRMWARE }}
 
-
       - name: Generate release tag
-        if: env.UPLOAD_RELEASE == 'true'
-        run: |
-          echo "release_tag=LEDE_NSS_AX1800PRO_$(date +%Y.%m.%d-%H%M)" >> $GITHUB_OUTPUT
-          echo "### 固件信息" > release.txt
-          echo "- 固件类型: LEDE" >> release.txt
-          echo "- 分支: master" >> release.txt
-          echo "- 支持的设备: jdcloud_re-ss-01" >> release.txt
-          echo "- 默认登录IP: 192.168.10.1" >> release.txt
-          echo "- 默认用户名: root" >> release.txt
-          echo "- 默认密码: password" >> release.txt
-
-      - name: Manage Releases
-        run: |
-          releases=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | "\(.id) \(.created_at)"')
-
-          if [ -z "$releases" ]; then
-            echo "No releases to manage."
-            exit 0
-          fi
-
-          current_date=$(date +%s)
-
-          echo "$releases" | while read release_info; do
-            release_id=$(echo "$release_info" | cut -d' ' -f1)
-            release_date=$(echo "$release_info" | cut -d' ' -f2)
-
-            release_date_seconds=$(date -d "$release_date" +%s || exit 1)
-            let date_diff=($current_date-$release_date_seconds)/86400
-
-            if [ $date_diff -gt 7 ]; then
-              echo "Deleting release ID: $release_id, $date_diff days old."
-              curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/$release_id" || echo "Failed to delete release ID: $release_id"
-            else
-              echo "Keeping release ID: $release_id, created within the last week."
-            fi
-          done
-
-      - name: Upload firmware to release
-        uses: softprops/action-gh-release@v1
+        id: tag
         if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREFIX="LEDE_NSS_AX1800PRO"
+          DATE_TAG=$(date +"%Y.%m.%d-%H:%M")
+          RELEASE_TAG="${PREFIX}_${DATE_TAG}"
+          echo "::set-output name=release_tag::${RELEASE_TAG}"
+
+          # Generate release description
+          {
+            echo "### 固件信息"
+            echo "- 固件类型: LEDE"
+            echo "- 分支: master"
+            echo "- 支持的设备: jdcloud_re-ss-01"
+            echo "- 默认登录IP: 192.168.10.1"
+            echo "- 默认用户名: root"
+            echo "- 默认密码: password"
+          } > release.txt
+    
+          [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
+          [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
+          echo "::set-output name=status::success"
+
+      - name: Delete workflow runs
+        uses: GitRML/delete-workflow-runs@main
         with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          body_path: release.txt
-          files: ${{ env.FIRMWARE }}/*
+          retain_days: 1
+          keep_minimum_runs: 3
+          token: ${{ secrets.GH_TOKEN }}
