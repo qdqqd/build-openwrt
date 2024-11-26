@@ -31,7 +31,13 @@ echo "DISTRIB_SOURCECODE='lede'" >>package/base-files/files/etc/openwrt_release
 # Add luci-app-amlogic
 #svn co https://github.com/ophub/luci-app-amlogic/trunk/luci-app-amlogic package/luci-app-amlogic
 
-#svn co https://github.com/destan19/OpenAppFilter package/luci-app-oaf
+# 应用过滤
+svn co https://github.com/kenzok8/small-package/trunk/luci-app-oaf package/luci-app-oaf
+svn co https://github.com/kenzok8/small-package/trunk/oaf package/oaf
+
+# 去广告dns
+svn co https://github.com/kenzok8/small-package/trunk/luci-app-adguardhome package/luci-app-adguardhome
+svn co https://github.com/kenzok8/small-package/trunk/adguardhome package/adguardhome
 
 # Fix runc version error
 # rm -rf ./feeds/packages/utils/runc/Makefile
