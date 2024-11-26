@@ -1,4 +1,4 @@
-name: 通用设备编译固件
+name: 自动编译固件
 
 on:
   repository_dispatch:
