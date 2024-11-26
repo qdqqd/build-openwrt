@@ -155,7 +155,7 @@ jobs:
         if: env.UPLOAD_RELEASE == 'true' && !cancelled()
         run: |
           PREFIX="LEDE_NSS_AX1800PRO"
-          DATE_TAG=$(date +"%Y.%m.%d-%H:%M")
+          DATE_TAG=$(date +"%Y.%m.%d-%H%M")
           RELEASE_TAG="${PREFIX}_${DATE_TAG}"
           echo "::set-output name=release_tag::${RELEASE_TAG}"
 
