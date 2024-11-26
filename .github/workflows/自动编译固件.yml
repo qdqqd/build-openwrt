@@ -3,7 +3,6 @@
 # Description: Build OpenWrt
 #============================================================================================
 
-
 name: 自动编译固件
 
 on:
@@ -24,10 +23,6 @@ on:
     - cron: '0 20 * * *' 
 
 env:
-  FEEDS_CONF: config/${{ env.source_branch }}/feeds.conf.default
-  CONFIG_FILE: config/${{ env.source_branch }}/config
-  DIY_P1_SH: config/${{ env.source_branch }}/diy-part1.sh
-  DIY_P2_SH: config/${{ env.source_branch }}/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -75,42 +70,39 @@ jobs:
         working-directory: /workdir
         if: ${{ steps.init.outputs.status }} == 'success' && !cancelled()
         run: |
-          # Set up compilation source code
-          if [[ "${{ env.source_branch }}" == *"openwrt"* ]]; then
-              REPO_URL="https://github.com/openwrt/openwrt"
-              REPO_BRANCH="main"
-              TAGS_NAME="official"
-          elif [[ "${{ env.source_branch }}" == *"lede"* ]]; then
-              REPO_URL="https://github.com/coolsnowwolf/lede"
-              REPO_BRANCH="master"
-              TAGS_NAME="lede"
-          elif [[ "${{ env.source_branch }}" == *"immortalwrt"* ]]; then
-              REPO_URL="https://github.com/immortalwrt/immortalwrt"
-              REPO_BRANCH="master"
-              TAGS_NAME="immortalwrt"
-          elif [[ "${{ env.source_branch }}" == *"Lienol"* ]]; then
-              REPO_URL="https://github.com/Lienol/openwrt"
-              REPO_BRANCH="22.03"
-              TAGS_NAME="Lienol"
+          if [[ "${{ env.source_branch }}" == "openwrt-main" ]]; then
+            REPO_URL="https://github.com/openwrt/openwrt"
+            REPO_BRANCH="main"
+            TAGS_NAME="official"
+          elif [[ "${{ env.source_branch }}" == "lede-master" ]]; then
+            REPO_URL="https://github.com/coolsnowwolf/lede"
+            REPO_BRANCH="master"
+            TAGS_NAME="lede"
+          elif [[ "${{ env.source_branch }}" == "immortalwrt-master" ]]; then
+            REPO_URL="https://github.com/immortalwrt/immortalwrt"
+            REPO_BRANCH="master"
+            TAGS_NAME="immortalwrt"
+          elif [[ "${{ env.source_branch }}" == "Lienol-master" ]]; then
+            REPO_URL="https://github.com/Lienol/openwrt"
+            REPO_BRANCH="22.03"
+            TAGS_NAME="Lienol"
           else
-              echo "Unknown source code repository."
-              exit 1
+            echo "Unknown source code repository."
+            exit 1
           fi
-          # Clone source code
           git clone -q --single-branch --depth=1 --branch=${REPO_BRANCH} ${REPO_URL} openwrt
           ln -sf /workdir/openwrt ${GITHUB_WORKSPACE}/openwrt
-          # Set output information
-          echo "build_tag=OpenWrt_${TAGS_NAME}_${{ env.openwrt_storage }}_$(date +"%Y.%m")" >> ${GITHUB_OUTPUT}
+          echo "build_tag=OpenWrt_${TAGS_NAME}_$(date +"%Y.%m")" >> ${GITHUB_OUTPUT}
           echo -e "REPO_URL: [ ${REPO_URL} ]\nREPO_BRANCH: [ ${REPO_BRANCH} ]\nTAGS_NAME: [ ${TAGS_NAME} ]"
           df -hT ${PWD}
           echo "status=success" >> ${GITHUB_OUTPUT}
 
       - name: Load custom feeds
         run: |
-          [[ -f "${FEEDS_CONF}" ]] && cp -f ${FEEDS_CONF} openwrt/feeds.conf.default
-          chmod +x ${DIY_P1_SH}
+          [[ -f "config/${{ env.source_branch }}/feeds.conf.default" ]] && cp -f config/${{ env.source_branch }}/feeds.conf.default openwrt/feeds.conf.default
+          chmod +x config/${{ env.source_branch }}/diy-part1.sh
           cd openwrt/
-          ${GITHUB_WORKSPACE}/${DIY_P1_SH}
+          ${GITHUB_WORKSPACE}/config/${{ env.source_branch }}/diy-part1.sh
 
       - name: Update feeds
         run: cd openwrt/ && ./scripts/feeds update -a
@@ -121,10 +113,10 @@ jobs:
       - name: Load custom configuration
         run: |
           [[ -d "files" ]] && mv -f files openwrt/files
-          [[ -e "${CONFIG_FILE}" ]] && cp -f ${CONFIG_FILE} openwrt/.config
-          chmod +x ${DIY_P2_SH}
+          [[ -e "config/${{ env.source_branch }}/config" ]] && cp -f config/${{ env.source_branch }}/config openwrt/.config
+          chmod +x config/${{ env.source_branch }}/diy-part2.sh
           cd openwrt/
-          ${GITHUB_WORKSPACE}/${DIY_P2_SH}
+          ${GITHUB_WORKSPACE}/config/${{ env.source_branch }}/diy-part2.sh
 
       - name: Download package
         id: package
@@ -151,7 +143,7 @@ jobs:
         uses: actions/upload-artifact@main
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
         with:
-          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          name: OpenWrt_bin_${{ env.source_branch }}_${{ env.FILE_DATE }}
           path: openwrt/bin
 
       - name: Organize files
@@ -167,7 +159,7 @@ jobs:
         uses: actions/upload-artifact@main
         if: steps.organize.outputs.status == 'success' && !cancelled()
         with:
-          name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          name: OpenWrt_firmware_${{ env.source_branch }}_${{ env.FILE_DATE }}
           path: ${{ env.FIRMWARE }}
 
       - name: Generate release tag
@@ -179,7 +171,6 @@ jobs:
           RELEASE_TAG="${PREFIX}_${DATE_TAG}"
           echo "::set-output name=release_tag::${RELEASE_TAG}"
 
-          # Generate release description
           {
             echo "### 固件信息"
             echo "- 固件类型: LEDE"
@@ -189,9 +180,7 @@ jobs:
             echo "- 默认用户名: root"
             echo "- 默认密码: password"
           } > release.txt
-    
-          [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
-          [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
+
           echo "::set-output name=status::success"
 
       - name: Upload firmware to release
