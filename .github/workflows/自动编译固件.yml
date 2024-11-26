@@ -21,7 +21,7 @@ on:
           - immortalwrt-master
           - Lienol-master
   schedule:
-    - cron: '0 4 * * *' 
+    - cron: '0 20 * * *' 
 
 env:
   FEEDS_CONF: config/${{ env.source_branch }}/feeds.conf.default
