@@ -142,7 +142,7 @@ jobs:
         uses: actions/upload-artifact@main
         if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
         with:
-          name: OpenWrt_bin_${{ env.source_branch }}_${{ env.FILE_DATE }}
+          name: OpenWrt_bin
           path: openwrt/bin
 
       - name: 整理文件
@@ -158,7 +158,7 @@ jobs:
         uses: actions/upload-artifact@main
         if: steps.organize.outputs.status == 'success' && !cancelled()
         with:
-          name: OpenWrt_firmware_${{ env.source_branch }}_${{ env.FILE_DATE }}
+          name: OpenWrt_firmware
           path: ${{ env.FIRMWARE }}
 
       - name: 生成发布标签
