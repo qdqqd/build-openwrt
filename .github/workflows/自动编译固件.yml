@@ -219,12 +219,13 @@ jobs:
           files: ${{ env.FIRMWARE }}/*
 
       - name: 删除旧 Releases
-        uses: c-hive/gha-remove-old-releases@v2.3.0
-        with:
-          keep_last: 7
-          delete_tags: true
+        uses: actions/delete-release@v1
+        if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          delete_tags: true
+          keep_latest: 7
 
       - name: 删除工作流运行记录
         uses: GitRML/delete-workflow-runs@main
