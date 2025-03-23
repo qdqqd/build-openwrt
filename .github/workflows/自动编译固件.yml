@@ -219,10 +219,9 @@ jobs:
           files: ${{ env.FIRMWARE }}/*
 
       - name: 删除旧 Releases
-        if: success()
-        uses: dev-drprasad/delete-old-releases@v0.2.1
+        uses: c-hive/gha-remove-old-releases@v2.3.0
         with:
-          keep_latest: 7
+          keep_last: 7
           delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
