@@ -219,13 +219,24 @@ jobs:
           files: ${{ env.FIRMWARE }}/*
 
       - name: 删除旧 Releases
-        uses: actions/delete-release@v1
         if: success()
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          delete_tags: true
-          keep_latest: 7
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 获取所有 releases (按创建时间倒序)
+          releases=$(gh release list --limit 100 --json tagName,createdAt -q '.[].tagName')
+    
+          # 保留最新7个，其余删除
+          keep=7
+          count=0
+          for tag in $releases; do
+            if [ $count -ge $keep ]; then
+              echo "Deleting $tag..."
+              gh release delete "$tag" --yes
+              gh api -X DELETE "/repos/${{ github.repository }}/git/refs/tags/$tag"
+            fi
+            ((count++))
+          done
 
       - name: 删除工作流运行记录
         uses: GitRML/delete-workflow-runs@main
